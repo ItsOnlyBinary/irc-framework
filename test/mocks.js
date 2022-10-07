@@ -15,6 +15,9 @@ module.exports = {
         });
         const stubs = {
             emit: sinon.stub(),
+            client: {
+                raw: sinon.stub()
+            },
             connection: {
                 write: sinon.stub()
             },

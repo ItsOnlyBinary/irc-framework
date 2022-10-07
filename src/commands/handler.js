@@ -6,8 +6,6 @@ const _ = {
     uniq: require('lodash/uniq'),
 };
 const EventEmitter = require('eventemitter3');
-const irc_numerics = require('./numerics');
-const IrcCommand = require('./command');
 
 module.exports = class IrcCommandHandler extends EventEmitter {
     constructor(client) {
@@ -33,9 +31,7 @@ module.exports = class IrcCommandHandler extends EventEmitter {
         require('./handlers/generics')(this);
     }
 
-    dispatch(message) {
-        const irc_command = new IrcCommand(message.command.toUpperCase(), message);
-
+    dispatch(irc_command) {
         // Batched commands will be collected and executed as a transaction
         const batch_id = irc_command.getTag('batch');
         if (batch_id) {
@@ -56,9 +52,9 @@ module.exports = class IrcCommandHandler extends EventEmitter {
     executeCommand(irc_command) {
         let command_name = irc_command.command;
 
-        // Check if we have a numeric->command name- mapping for this command
-        if (irc_numerics[irc_command.command.toUpperCase()]) {
-            command_name = irc_numerics[irc_command.command.toUpperCase()];
+        // Check if we have a numeric->command_name mapping for this command
+        if (irc_command.command_name) {
+            command_name = irc_command.command_name;
         }
 
         if (this.handlers[command_name]) {

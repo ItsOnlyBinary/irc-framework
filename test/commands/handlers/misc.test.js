@@ -23,8 +23,8 @@ describe('src/commands/handlers/misc.js', function() {
         mock.handlers.PING(cmd, mock.spies);
 
         it('should respond with the appropriate PONG message', function() {
-            expect(mock.spies.connection.write).to.have.been.calledOnce;
-            expect(mock.spies.connection.write).to.have.been.calledWith('PONG example.com');
+            expect(mock.spies.client.raw).to.have.been.calledOnce;
+            expect(mock.spies.client.raw).to.have.been.calledWith('PONG example.com');
         });
 
         it('should emit the appropriate PING event', function() {

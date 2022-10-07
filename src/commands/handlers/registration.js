@@ -22,7 +22,7 @@ const handlers = {
         // to an IRC server, not now(). Send a PING so that we can get a reliable time from PONG
         if (handler.network.cap.isEnabled('server-time')) {
             // Ping to try get a server-time in its response as soon as possible
-            handler.connection.write('PING ' + Date.now());
+            handler.client.raw('PING ' + Date.now());
         }
 
         handler.emit('registered', {
@@ -89,7 +89,7 @@ const handlers = {
             } else if (option[0] === 'NAMESX' && !handler.network.cap.isEnabled('multi-prefix')) {
                 // Tell the server to send us all user modes in NAMES reply, not just
                 // the highest one
-                handler.connection.write('PROTOCTL NAMESX');
+                handler.client.raw('PROTOCTL NAMESX');
             }
         }
 
@@ -172,9 +172,9 @@ const handlers = {
             if (command.params[2] !== '*') {
                 if (handler.network.cap.requested.length > 0) {
                     handler.network.cap.negotiating = true;
-                    handler.connection.write('CAP REQ :' + handler.network.cap.requested.join(' '));
+                    handler.client.raw('CAP REQ :' + handler.network.cap.requested.join(' '));
                 } else {
-                    handler.connection.write('CAP END');
+                    handler.client.raw('CAP END');
                     handler.network.cap.negotiating = false;
                 }
             }
@@ -193,13 +193,13 @@ const handlers = {
             if (handler.network.cap.negotiating) {
                 if (handler.network.cap.isEnabled('sasl')) {
                     if (typeof handler.connection.options.sasl_mechanism === 'string') {
-                        handler.connection.write('AUTHENTICATE ' + handler.connection.options.sasl_mechanism);
+                        handler.client.raw('AUTHENTICATE ' + handler.connection.options.sasl_mechanism);
                     } else {
-                        handler.connection.write('AUTHENTICATE PLAIN');
+                        handler.client.raw('AUTHENTICATE PLAIN');
                     }
                 } else if (handler.network.cap.requested.length === 0) {
                     // If all of our requested CAPs have been handled, end CAP negotiation
-                    handler.connection.write('CAP END');
+                    handler.client.raw('CAP END');
                     handler.network.cap.negotiating = false;
                 }
             }
@@ -214,7 +214,7 @@ const handlers = {
 
             // If all of our requested CAPs have been handled, end CAP negotiation
             if (handler.network.cap.negotiating && handler.network.cap.requested.length === 0) {
-                handler.connection.write('CAP END');
+                handler.client.raw('CAP END');
                 handler.network.cap.negotiating = false;
             }
             break;
@@ -236,7 +236,7 @@ const handlers = {
                 }
             }
 
-            handler.connection.write('CAP REQ :' + request_caps.join(' '));
+            handler.client.raw('CAP REQ :' + request_caps.join(' '));
             break;
         case 'DEL':
             // Update list of enabled capabilities
@@ -256,7 +256,7 @@ const handlers = {
     AUTHENTICATE: function(command, handler) {
         if (command.params[0] !== '+') {
             if (handler.network.cap.negotiating) {
-                handler.connection.write('CAP END');
+                handler.client.raw('CAP END');
                 handler.network.cap.negotiating = false;
             }
 
@@ -265,7 +265,7 @@ const handlers = {
 
         // Send blank authenticate for EXTERNAL mechanism
         if (handler.connection.options.sasl_mechanism === 'EXTERNAL') {
-            handler.connection.write('AUTHENTICATE +');
+            handler.client.raw('AUTHENTICATE +');
             return;
         }
 
@@ -281,17 +281,17 @@ const handlers = {
         let sliceOffset = 0;
 
         while (b64.length > sliceOffset) {
-            handler.connection.write('AUTHENTICATE ' + b64.substr(sliceOffset, singleAuthCommandLength));
+            handler.client.raw('AUTHENTICATE ' + b64.substr(sliceOffset, singleAuthCommandLength));
             sliceOffset += singleAuthCommandLength;
         }
         if (b64.length === sliceOffset) {
-            handler.connection.write('AUTHENTICATE +');
+            handler.client.raw('AUTHENTICATE +');
         }
     },
 
     RPL_LOGGEDIN: function(command, handler) {
         if (handler.network.cap.negotiating === true) {
-            handler.connection.write('CAP END');
+            handler.client.raw('CAP END');
             handler.network.cap.negotiating = false;
         }
 
@@ -346,21 +346,21 @@ const handlers = {
 
     RPL_SASLLOGGEDIN: function(command, handler) {
         if (handler.network.cap.negotiating === true) {
-            handler.connection.write('CAP END');
+            handler.client.raw('CAP END');
             handler.network.cap.negotiating = false;
         }
     },
 
     ERR_SASLNOTAUTHORISED: function(command, handler) {
         if (handler.network.cap.negotiating) {
-            handler.connection.write('CAP END');
+            handler.client.raw('CAP END');
             handler.network.cap.negotiating = false;
         }
     },
 
     ERR_SASLABORTED: function(command, handler) {
         if (handler.network.cap.negotiating) {
-            handler.connection.write('CAP END');
+            handler.client.raw('CAP END');
             handler.network.cap.negotiating = false;
         }
     },

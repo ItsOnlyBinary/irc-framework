@@ -11,11 +11,13 @@ const EventEmitter = require('eventemitter3');
 const MiddlewareHandler = require('middleware-handler');
 const IrcCommandHandler = require('./commands/').CommandHandler;
 const IrcMessage = require('./ircmessage');
+const IrcCommand = require('./commands/command');
 const Connection = require('./connection');
 const NetworkInfo = require('./networkinfo');
 const User = require('./user');
 const Channel = require('./channel');
 const { lineBreak } = require('./linebreak');
+const ircLineParser = require('./irclineparser');
 const MessageTags = require('./messagetags');
 
 let default_transport = null;
@@ -74,6 +76,7 @@ module.exports = class IrcClient extends EventEmitter {
         // Provides middleware hooks for either raw IRC commands or the easier to use parsed commands
         client.raw_middleware = new MiddlewareHandler();
         client.parsed_middleware = new MiddlewareHandler();
+        client.outgoing_middleware = new MiddlewareHandler();
 
         client.connection = new Connection(client.options);
         client.network = new NetworkInfo();
@@ -123,7 +126,21 @@ module.exports = class IrcClient extends EventEmitter {
                     return;
                 }
 
-                client.command_handler.dispatch(message);
+                const irc_command = new IrcCommand(message.command, message);
+
+                client.emit(`raw.${irc_command.command}`, irc_command, raw_line);
+                if (irc_command.handled) {
+                    return;
+                }
+
+                if (irc_command.command_name) {
+                    client.emit(`raw.${irc_command.command_name}`, irc_command, raw_line);
+                    if (irc_command.handled) {
+                        return;
+                    }
+                }
+
+                client.command_handler.dispatch(irc_command);
             });
         });
 
@@ -160,7 +177,7 @@ module.exports = class IrcClient extends EventEmitter {
     }
 
     use(middleware_fn) {
-        middleware_fn(this, this.raw_middleware, this.parsed_middleware);
+        middleware_fn(this, this.raw_middleware, this.parsed_middleware, this.outgoing_middleware);
         return this;
     }
 
@@ -216,7 +233,6 @@ module.exports = class IrcClient extends EventEmitter {
                 };
 
                 // These events with .reply() function are all messages. Emit it separately
-                // TODO: Should this consider a notice a message?
                 client.command_handler.emit('message', _.extend({ type: event_name }, event_arg));
             }
 
@@ -378,11 +394,34 @@ module.exports = class IrcClient extends EventEmitter {
      * Client API
      */
     raw(input) {
+        const client = this;
+        let message = null;
+
         if (input instanceof IrcMessage) {
-            this.connection.write(input.to1459());
+            message = input;
         } else {
-            this.connection.write(this.rawString.apply(this, arguments));
+            const rawString = this.rawString.apply(this, arguments);
+            message = ircLineParser(rawString);
         }
+
+        client.outgoing_middleware.handle([message.command, message, client], function(err) {
+            if (err) {
+                console.error(err.stack);
+                return;
+            }
+
+            Object.defineProperty(message, 'handled', {
+                writable: true,
+                value: false,
+            });
+
+            client.emit(`out.${message.command}`, message);
+            if (message.handled) {
+                return;
+            }
+
+            client.connection.write(message.to1459());
+        });
     }
 
     rawString(input) {

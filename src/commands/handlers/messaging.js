@@ -78,7 +78,7 @@ const handlers = {
                     batch: command.batch
                 });
             } else if (ctcp_command === 'VERSION' && handler.connection.options.version) {
-                handler.connection.write(util.format(
+                handler.client.raw(util.format(
                     'NOTICE %s :\x01VERSION %s\x01',
                     command.nick,
                     handler.connection.options.version

@@ -155,7 +155,7 @@ const handlers = {
     },
 
     PING: function(command, handler) {
-        handler.connection.write('PONG ' + command.params[command.params.length - 1]);
+        handler.client.raw('PONG ' + command.params[command.params.length - 1]);
 
         const time = command.getServerTime();
         handler.emit('ping', {
