@@ -7,6 +7,7 @@ const _ = {
     difference: require('lodash/difference'),
     each: require('lodash/each'),
     uniq: require('lodash/uniq'),
+    find: require('lodash/find'),
 };
 
 const handlers = {
@@ -136,48 +137,70 @@ const handlers = {
 
         // Which capabilities we want to enable
         let want = [
-            'cap-notify',
-            'batch',
-            'multi-prefix',
-            'message-tags',
-            'draft/message-tags-0.2',
-            'away-notify',
-            'invite-notify',
-            'account-notify',
-            'account-tag',
-            'server-time',
-            'userhost-in-names',
-            'extended-join',
-            'znc.in/server-time-iso',
-            'znc.in/server-time'
+            { cap: 'cap-notify' },
+            { cap: 'batch' },
+            { cap: 'multi-prefix' },
+            { cap: 'message-tags' },
+            { cap: 'draft/message-tags-0.2' },
+            { cap: 'away-notify' },
+            { cap: 'invite-notify' },
+            { cap: 'account-notify' },
+            { cap: 'account-tag' },
+            { cap: 'server-time' },
+            { cap: 'userhost-in-names' },
+            { cap: 'extended-join' },
+            { cap: 'znc.in/server-time-iso' },
+            { cap: 'znc.in/server-time' }
         ];
 
         // Optional CAPs depending on settings
         const saslAuth = getSaslAuth(handler);
         if (saslAuth || handler.connection.options.sasl_mechanism === 'EXTERNAL') {
-            want.push('sasl');
+            want.push({ cap: 'sasl' });
         }
         if (handler.connection.options.enable_chghost) {
-            want.push('chghost');
+            want.push({ cap: 'chghost' });
         }
         if (handler.connection.options.enable_setname) {
-            want.push('setname');
+            want.push({ cap: 'setname' });
         }
         if (handler.connection.options.enable_echomessage) {
-            want.push('echo-message');
+            want.push({ cap: 'echo-message' });
         }
         if (handler.connection.options.enable_standardreplies) {
-            want.push('standard-replies');
+            want.push({ cap: 'standard-replies' });
         }
 
-        want = _.uniq(want.concat(handler.request_extra_caps));
+        want = want.concat(handler.request_extra_caps);
+
+        const filterCaps = (toFilter) => {
+            return toFilter.filter((capObj) => {
+                if (capabilities.indexOf(capObj.cap) === -1) {
+                    return false;
+                }
+
+                if (typeof capObj.condition === 'function') {
+                    return capObj.condition(capabilities);
+                }
+
+                if (typeof capObj.condition === 'string') {
+                    return capabilities.indexOf(capObj.condition) !== -1;
+                }
+
+                if (Array.isArray(capObj.condition)) {
+                    return capObj.condition.every((cond) => capabilities.indexOf(cond) !== -1);
+                }
+
+                return true;
+            }).map((capObj) => capObj.cap);
+        };
 
         switch (command.params[1]) {
         case 'LS':
             // Compute which of the available capabilities we want and request them
-            request_caps = _.intersection(capabilities, want);
+            request_caps = _.uniq(filterCaps(want));
             if (request_caps.length > 0) {
-                handler.network.cap.requested = handler.network.cap.requested.concat(request_caps);
+                handler.network.cap.requested = _.uniq(handler.network.cap.requested.concat(request_caps));
             }
 
             // CAP 3.2 multline support. Only send our CAP requests on the last CAP LS
@@ -185,7 +208,7 @@ const handlers = {
             if (command.params[2] !== '*') {
                 if (handler.network.cap.requested.length > 0) {
                     handler.network.cap.negotiating = true;
-                    handler.connection.write('CAP REQ :' + handler.network.cap.requested.join(' '));
+                    sendCapRequest(handler, handler.network.cap.requested);
                 } else {
                     handler.connection.write('CAP END');
                     handler.network.cap.negotiating = false;
@@ -256,31 +279,54 @@ const handlers = {
             break;
         case 'NEW':
             // Request any new CAPs that we want but haven't already enabled
-            request_caps = [];
-            for (let i = 0; i < capabilities.length; i++) {
-                const cap = capabilities[i];
-                if (
-                    want.indexOf(cap) > -1 &&
-                        request_caps.indexOf(cap) === -1 &&
-                        !handler.network.cap.isEnabled(cap)
-                ) {
-                    handler.network.cap.requested.push(cap);
-                    request_caps.push(cap);
-                }
-            }
+            request_caps = filterCaps(want).filter((cap) => (
+                !handler.network.cap.isEnabled(cap)
+            ));
 
-            handler.connection.write('CAP REQ :' + request_caps.join(' '));
+            if (request_caps.length > 0) {
+                handler.network.cap.requested = _.uniq(handler.network.cap.requested.concat(request_caps));
+                sendCapRequest(handler, request_caps);
+            }
             break;
-        case 'DEL':
+        case 'DEL': {
             // Update list of enabled capabilities
             handler.network.cap.enabled = _.difference(
                 handler.network.cap.enabled,
                 capabilities
             );
+
+            // If any of our enabled caps depend on the caps being removed, we should
+            // also request to remove those
+            const toRemove = [];
+            handler.network.cap.enabled.forEach((enabledCap) => {
+                const wantObj = _.find(want, { cap: enabledCap });
+                if (!wantObj || !wantObj.condition) {
+                    return;
+                }
+
+                let stillMet = true;
+                if (typeof wantObj.condition === 'string') {
+                    stillMet = handler.network.cap.enabled.indexOf(wantObj.condition) !== -1;
+                } else if (typeof wantObj.condition === 'function') {
+                    stillMet = wantObj.condition(handler.network.cap.enabled);
+                } else if (Array.isArray(wantObj.condition)) {
+                    stillMet = wantObj.condition.every((cond) => handler.network.cap.enabled.indexOf(cond) !== -1);
+                }
+
+                if (!stillMet) {
+                    toRemove.push('-' + enabledCap);
+                }
+            });
+
+            if (toRemove.length > 0) {
+                sendCapRequest(handler, toRemove);
+            }
+
             for (const cap_name of capabilities) {
                 handler.network.cap.available.delete(cap_name);
             }
             break;
+        }
         }
 
         handler.emit('cap ' + command.params[1].toLowerCase(), {
@@ -474,6 +520,29 @@ function handleSaslFail(handler, reason, command) {
     const sasl_disconnect_on_fail = handler.connection.options.sasl_disconnect_on_fail;
     if (sasl_disconnect_on_fail && handler.network.cap.negotiating) {
         handler.connection.end();
+    }
+}
+
+function sendCapRequest(handler, caps) {
+    let line = [];
+    let lineLen = 0;
+    // 'CAP REQ :' is 9 chars.
+    const overhead = 9;
+    const maxLen = (handler.client.options.message_max_length || 500) - overhead;
+
+    caps.forEach((cap) => {
+        if (lineLen > 0 && lineLen + cap.length + 1 > maxLen) {
+            handler.connection.write('CAP REQ :' + line.join(' '));
+            line = [];
+            lineLen = 0;
+        }
+
+        line.push(cap);
+        lineLen += cap.length + (lineLen > 0 ? 1 : 0);
+    });
+
+    if (line.length > 0) {
+        handler.connection.write('CAP REQ :' + line.join(' '));
     }
 }
 

@@ -24,7 +24,6 @@ module.exports = class IrcClient extends EventEmitter {
     constructor(options) {
         super();
 
-        this.request_extra_caps = [];
         this.options = options || null;
 
         this.createStructure();
@@ -187,8 +186,8 @@ module.exports = class IrcClient extends EventEmitter {
         });
     }
 
-    requestCap(cap) {
-        this.request_extra_caps = this.request_extra_caps.concat(cap);
+    requestCap(cap, condition) {
+        this.command_handler.requestExtraCaps(cap, condition);
     }
 
     use(middleware_fn) {
@@ -218,8 +217,6 @@ module.exports = class IrcClient extends EventEmitter {
         client.user.nick = options.nick;
         client.user.username = options.username;
         client.user.gecos = options.gecos;
-
-        client.command_handler.requestExtraCaps(client.request_extra_caps);
 
         // Everything is setup and prepared, start connecting
         client.connection.connect(options);

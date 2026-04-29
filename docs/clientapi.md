@@ -66,8 +66,23 @@ Once connected to an IRC network, this object will have these properties:
 
 
 #### Methods
-##### `.requestCap('twitch.tv/membership')`
-Request an extra IRCv3 capability
+##### `.requestCap(cap [, condition])`
+Request an extra IRCv3 capability. The optional `condition` allows you to request a capability only if certain requirements are met.
+
+* `cap`: The name of the capability to request.
+* `condition`: (Optional) Can be a **string**, an **array of strings**, or a **function**.
+    * **String**: The CAP will only be requested if the specified capability is also available on the server.
+    * **Array of strings**: The CAP will only be requested if **all** listed capabilities are available.
+    * **Function**: A predicate `(availableCaps) => boolean` that must return true for the CAP to be requested.
+
+Example of mutual dependency:
+```javascript
+// Neither will be requested unless both are supported by the server
+client.requestCap('echo-message', 'labeled-response');
+client.requestCap('labeled-response', 'echo-message');
+```
+
+**Note:** The library handles large numbers of capability requests by automatically splitting `CAP REQ` commands into multiple lines based on `message_max_length`. If an enabled capability's dependency is later removed by the server (`CAP DEL`), the library will automatically request to disable the dependent capability to ensure state consistency.
 
 ##### `.use(middleware_fn())`
 Add middleware to handle the events for the client instance

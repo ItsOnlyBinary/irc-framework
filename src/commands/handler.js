@@ -68,8 +68,13 @@ module.exports = class IrcCommandHandler extends EventEmitter {
         }
     }
 
-    requestExtraCaps(cap) {
-        this.request_extra_caps = _.uniq(this.request_extra_caps.concat(cap));
+    requestExtraCaps(capName, condition) {
+        const alreadyRequested = _.find(this.request_extra_caps, { cap: capName });
+        if (!alreadyRequested) {
+            this.request_extra_caps.push({ cap: capName, condition: condition });
+        } else if (condition) {
+            alreadyRequested.condition = condition;
+        }
     }
 
     addHandler(command, handler) {
